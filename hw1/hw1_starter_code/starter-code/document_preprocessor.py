@@ -34,20 +34,25 @@ class Tokenizer:
         Returns:
             A list of tokens processed by lower-casing depending on the given condition
         """
-        # TODO: Add support for lower-casing and multi-word expressions
-        if self.lowercase:
-            input_tokens = [token.lower() for token in input_tokens]
-            
+        # TODO: Add support for lower-casing and multi-word expressions     
+        if input_tokens == []:
+            return []
+           
         if self.multiword_expressions:
             # I want to sort the array by the word length from longest to shortest, thus "Taylor Swift" Tour will be detect ahead of "Taylor Swift"
             sorted_multiword_expressions = sorted(self.multiword_expressions, key=len, reverse=True)
             text = ' '.join(input_tokens)
             for multi_exp in sorted_multiword_expressions:
                 if multi_exp in text:
-                    text = text.replace(multi_exp, multi_exp.replace(" ", "_"))
+                    text = text.replace(multi_exp, multi_exp.replace(" ", "$"))
             output_tokens = text.split(' ')
-            output_tokens = [token.replace("_", " ") for token in output_tokens]
+            output_tokens = [token.replace("$", " ") for token in output_tokens]
+            if self.lowercase:
+                output_tokens = [token.lower() for token in output_tokens]
             return output_tokens
+        
+        elif self.lowercase:
+                input_tokens = [token.lower() for token in input_tokens]
         
         return input_tokens
     

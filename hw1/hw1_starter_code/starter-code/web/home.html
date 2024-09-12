@@ -1,0 +1,265 @@
+<!--Author: Prithvijit Dasgupta-->
+<html>
+
+<head>
+    <title>SI 650 Test Bench</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/purecss@3.0.0/build/pure-min.css"
+        integrity="sha384-X38yfunGUhNzHpBaEBsWLO+A0HDYOQi8ufWDkZ0k9e0eXz/tH3II7uKZ9msv++Ls" crossorigin="anonymous">
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Sans&display=swap"
+        rel="stylesheet">
+</head>
+
+<style>
+    .header {
+        display: flex;
+        flex-direction: row;
+    }
+
+    .footer {
+        display: flex;
+        flex-direction: row;
+    }
+
+    .left-pad {
+        width: 25%
+    }
+
+    .page-mid {
+        width: 50%;
+    }
+
+    .right-pad {
+        width: 25%;
+    }
+
+    .header-text {
+        font-size: 30;
+        text-align: center;
+    }
+
+    .page {
+        display: flex;
+        flex-direction: column;
+        font-family: 'Fira Sans';
+    }
+
+    .search-bar {
+        display: flex;
+        flex-direction: row;
+    }
+
+    .search-box {
+        display: flex;
+        flex-direction: row;
+    }
+
+    .results-area {
+        display: flex;
+        flex-direction: row;
+        flex-shrink: 0;
+    }
+
+    .search-mid {
+        display: flex;
+        flex-direction: column;
+        width: 50%;
+    }
+
+    .lds-hourglass {
+        display: inline-block;
+        position: relative;
+        width: 100px;
+        height: 100px;
+    }
+
+    .lds-hourglass:after {
+        content: " ";
+        display: block;
+        border-radius: 50%;
+        width: 0;
+        height: 0;
+        margin: 8px;
+        box-sizing: border-box;
+        border: 32px solid #000;
+        border-color: #000 transparent #000 transparent;
+        animation: lds-hourglass 1.2s infinite;
+    }
+
+    .center {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        padding: 10px;
+    }
+
+    @keyframes lds-hourglass {
+        0% {
+            transform: rotate(0);
+            animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);
+        }
+
+        50% {
+            transform: rotate(900deg);
+            animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);
+        }
+
+        100% {
+            transform: rotate(1800deg);
+        }
+    }
+</style>
+
+<body>
+    <div class="page">
+        <div class="header">
+            <div class="left-pad"></div>
+            <div class="page-mid">
+                <h1 class="header-text">SI 650 Test Bench</h1>
+            </div>
+            <div class="right-pad"></div>
+        </div>
+        <div class="search-bar">
+            <div class="left-pad"></div>
+            <div class="page-mid">
+                <div class="search-box">
+                    <h3 style="width: 13%;">Search query: </h3>
+                    <input style="width: 70%; padding: 10px; height:fit-content; margin-top: 10px;" type="text"
+                        id="query" />
+                    <div style="width: 17%;">
+                        <button class="pure-button pure-button-primary" style="margin-top: 8%; margin-left: 10%;"
+                            onclick="doSearch('/search', 'POST')">Search!</button>
+                    </div>
+                </div>
+            </div>
+            <div class="right-pad"></div>
+        </div>
+        <div class="results-area" id="results-area">
+            <div class="left-pad"></div>
+            <div class="search-mid">
+                <div class="lds-hourglass center" id="load-spinner" hidden></div>
+                <div class="results" id="results" hidden>
+                    <h2 style="text-align: center;" id="no-res-text">No results found!</h2>
+                </div>
+            </div>
+            <div class="right-pad"></div>
+        </div>
+        <div class="footer">
+            <div class="left-pad">
+                <button class="pure-button" style="float: right;" id="prev" onclick="doSearch(prev, 'GET')"
+                    hidden>Previous</button>
+            </div>
+            <div class="page-mid" id="footer-mid" style="text-align: center;">
+            </div>
+            <div class="right-pad">
+                <button class="pure-button pure-button-primary" id="next" onclick="doSearch(next, 'GET')"
+                    hidden>Next</button>
+            </div>
+        </div>
+    </div>
+</body>
+
+<script>
+    let prev = null
+    let next = null
+    document.getElementById('query').onkeypress = function (e) {
+        if (!e) e = window.event;
+        var keyCode = e.code || e.key;
+        if (keyCode == 'Enter') {
+            doSearch('/search', 'POST')
+        }
+    }
+
+    async function fetchWikiData(dict) {
+        URL = `https://en.wikipedia.org/w/api.php?origin=*&action=query&format=json&redirects=1&prop=extracts&exintro&explaintext&pageids=${dict.docid}`
+        result = await (await fetch(URL)).json()
+        data = Object.values(result.query.pages)[0]
+        return {
+            docid: dict.docid,
+            title: data.title,
+            url: `https://en.wikipedia.org/wiki/?curid=${dict.docid}`,
+            text: data.extract,
+            id: dict.id
+        }
+    }
+    function doSearch(url, method) {
+        let startTime = (new Date()).getTime()
+        let footer = document.getElementById('footer-mid')
+        const displayBox = document.getElementById('results')
+        displayBox.setAttribute('hidden', true)
+        footer.setAttribute('hidden', true)
+        document.getElementById('load-spinner').removeAttribute('hidden')
+        if (method=='POST'){
+            document.getElementById('prev').setAttribute('hidden', true)
+            document.getElementById('next').setAttribute('hidden', true)
+            }
+        const query = document.getElementById('query').value.trim()
+        let results = fetch(url, {
+            method,
+            body: method == 'POST' ? JSON.stringify({
+                'query': query
+            }) : null,
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+            .then(response => response.json())
+            .then(data=>{
+                prev = data.page.prev
+                next = data.page.next
+                return Promise.all(data.results.map(fetchWikiData))
+            })
+            .then(results => {
+                if (results.length > 0) {
+                    const olElement = document.createElement('ul')
+                    olElement.setAttribute('id', 'search-results')
+                    for (item of results) {
+                        const liElement = document.createElement('li')
+                        const textNode = document.createElement('p')
+                        const nameAnchor = document.createElement('a')
+                        const nameNode = document.createElement('p')
+                        nameAnchor.textContent = `${item.id}. ${item.title}`
+                        nameAnchor.setAttribute('href', item.url)
+                        nameAnchor.setAttribute('target', '_blank')
+                        nameNode.append(nameAnchor)
+                        textNode.textContent = item.text.slice(0, 250)+'...'
+                        liElement.append(nameNode)
+                        liElement.append(textNode)
+                        olElement.append(liElement)
+                    }
+                    noResNode = document.getElementById('no-res-text')
+                    oldNode = document.getElementById('search-results')
+                    if (oldNode)
+                        displayBox.removeChild(oldNode)
+                    if (noResNode)
+                        displayBox.removeChild(noResNode)
+                    displayBox.append(olElement)
+                }
+                document.getElementById('load-spinner').setAttribute('hidden', true)
+                document.getElementById('prev').removeAttribute('hidden')
+                document.getElementById('next').removeAttribute('hidden')
+            })
+            .catch(err => {
+                console.log('Search API failed', err)
+                noResNode = document.getElementById('no-res-text')
+                document.getElementById('load-spinner').setAttribute('hidden', true)
+                noResNode.removeAttribute('hidden')
+            })
+            .finally(_ => {
+                footer.removeAttribute('hidden')
+                timer = document.getElementById('timer')
+                if (timer) {
+                    footer.removeChild(timer)
+                }
+                newTimer = document.createElement('h4')
+                newTimer.setAttribute('id', 'timer')
+                totalTime = (new Date()).getTime() - startTime
+                newTimer.textContent = `Time taken: ${totalTime}ms`
+                displayBox.removeAttribute('hidden')
+                footer.append(newTimer)
+            })
+    }
+</script>
+
+</html>

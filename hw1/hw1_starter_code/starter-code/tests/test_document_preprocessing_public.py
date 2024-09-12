@@ -4,7 +4,7 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from document_preprocessor import SplitTokenizer, RegexTokenizer, SpaCyTokenizer
 
-mwe_filepath = '/Users/fz/Desktop/UMSI/Winter2024/Information_Retrival/hw1/hw1_starter_code/starter-code/tests/multi_word_expressions.txt'
+mwe_filepath = 'multi_word_expressions.txt'
 mwe_list = []
 with open(mwe_filepath, 'r') as f: 
     lines = f.readlines()

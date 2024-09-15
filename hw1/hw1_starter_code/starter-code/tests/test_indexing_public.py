@@ -318,7 +318,7 @@ class TestIndexer_BasicInvertedIndex(unittest.TestCase):
     def setUp(self) -> None:
         self.index_name = 'test_index'
         self.tokenizer = RegexTokenizer('\w+')
-        self.index_type = IndexType.InvertedIndex
+        self.index_type = IndexType.BasicInvertedIndex
 
     def test_index_vocabularly(self):
 

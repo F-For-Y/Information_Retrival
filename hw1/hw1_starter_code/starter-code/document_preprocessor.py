@@ -52,7 +52,7 @@ class Tokenizer:
             return output_tokens
         
         elif self.lowercase:
-                input_tokens = [token.lower() for token in input_tokens]
+            input_tokens = [token.lower() for token in input_tokens]
         
         return input_tokens
     
@@ -146,6 +146,7 @@ class SpaCyTokenizer(Tokenizer):
         """
         super().__init__(lowercase, multiword_expressions)
         self.spacy_tokenizer = spacy.load('en_core_web_sm')
+        self.spacy_tokenizer.add_pipe("merge_entities")
         
 
     def tokenize(self, text: str) -> list[str]:

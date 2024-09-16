@@ -7,6 +7,11 @@ You can find 'relevance.csv', where the 'rel' column contains scores of the foll
 Treat search results from your ranking function that are not listed in the file as non-relevant. Thus, we have 
 three relevance levels: 0 (non-relevant), 1 (marginally relevant), and 2 (very relevant). 
 """
+import math
+import pandas as pd
+from ranker import Ranker, WordCountCosineSimilarity, DirichletLM, BM25, PivotedNormalization, TF_IDF, YourRanker
+from document_preprocessor import RegexTokenizer
+from indexing import Indexer, IndexType
 
 def map_score(search_result_relevances: list[int], cut_off: int = 10) -> float:
     """
@@ -24,7 +29,13 @@ def map_score(search_result_relevances: list[int], cut_off: int = 10) -> float:
         The MAP score
     """
     # TODO: Implement MAP
-    pass
+    rel = 0
+    for score in search_result_relevances[:cut_off]:
+        if score == 1:
+            rel += 1
+    return rel / len(search_result_relevances[:cut_off])
+    
+    
 
 
 def ndcg_score(search_result_relevances: list[float], 
@@ -47,7 +58,19 @@ def ndcg_score(search_result_relevances: list[float],
         The NDCG score
     """
     # TODO: Implement NDCG
-    pass
+    rel_dcg = 0
+    rel_idcg = 0
+    search_result_relevances = search_result_relevances[:cut_of]
+    ideal_relevance_score_ordering = ideal_relevance_score_ordering[:cut_of]
+    # Implement DCG
+    for i, score in enumerate(search_result_relevances):
+        rel_dcg += (2**score - 1) / (math.log2(i + 2))
+
+    # Implement IDCG
+    for i, score in enumerate(ideal_relevance_score_ordering):
+        rel_idcg += (2**score - 1) / (math.log2(i + 2))
+        
+    return rel_dcg / rel_idcg
 
 
 def run_relevance_tests(relevance_data_filename: str, ranker) -> dict[str, float]:
@@ -63,19 +86,42 @@ def run_relevance_tests(relevance_data_filename: str, ranker) -> dict[str, float
     Returns:
         A dictionary containing both MAP and NDCG scores
     """
-    # TODO: Load the relevance dataset
-
+    # TODO: Load the relevance csv dataset
+    # column query, title, docid, rel
+    df = pd.read_csv(relevance_data_filename)
+    val_dict = {}
+    for i in range(len(df)):
+        val_dict.setdefault(df['query'][i], {})
+        val_dict[df['query'][i]][df['docid'][i]] = df['rel'][i]
+        
+    # create the index with full document collection: wikipedia_200k_dataset.jsonl
     # TODO: Run each of the dataset's queries through your ranking function
-
-    # TODO: For each query's result, calculate the MAP and NDCG for every single query and average them out
-
+    query_result = {}
+    for query in val_dict.keys():
+        ranked_doc = ranker.query(query)   
+        query_result.setdefault(query, {})
+        query_result[query]['docid'] = [item[0] for item in ranked_doc]
+        map_lable = []
+        ndcg_label = []
+        for item in ranked_doc:
+            if item[0] in val_dict[query]:
+                map_lable.append(1 if val_dict[query][item[0]] > 3 else 0)
+                ndcg_label.append(val_dict[query][item[0]])
+            else:
+                ndcg_label.append(0)
+        query_result[query]['map_label'] = map_lable
+        query_result[query]['idcg_label'] = ndcg_label
+    
+    # TODO: For each query's result, calculate the MAP and NDCG for every single query and average them out\
     # NOTE: MAP requires using binary judgments of relevant (1) or not (0). You should use relevance 
     #       scores of (1,2,3) as not-relevant, and (4,5) as relevant.
-
     # NOTE: NDCG can use any scoring range, so no conversion is needed.
-  
     # TODO: Compute the average MAP and NDCG across all queries and return the scores
     # NOTE: You should also return the MAP and NDCG scores for each query in a list
+    for query in query_result.keys():
+        query_result[query]['map'] = map_score(query_result[query]['map_label'])
+        query_result[query]['ndcg'] = ndcg_score(query_result[query]['idcg_label'], sorted(query_result[query]['idcg_label'], reverse=True))
+    
     return {'map': 0, 'ndcg': 0, 'map_list': [], 'ndcg_list': []}
 
 

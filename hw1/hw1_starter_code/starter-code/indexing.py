@@ -385,7 +385,7 @@ class Indexer:
     def create_index(index_type: IndexType, dataset_path: str,
                         document_preprocessor: Tokenizer, stopwords: set[str],
                         minimum_word_frequency: int, text_key = "text",
-                        max_docs: int = -1, ) -> InvertedIndex:
+                        max_docs: int = -1, load_file_dir: str = None) -> InvertedIndex:
         '''
         This function is responsible for going through the documents one by one and inserting them into the index after tokenizing the document
 
@@ -415,22 +415,26 @@ class Indexer:
         elif index_type == IndexType.PositionalIndex:
             iindex = PositionalInvertedIndex()
             
-        tokenizer = document_preprocessor 
-        
-        docid_2_toekns = {}
-        word_count = Counter()
-        with open(dataset_path, 'r') as f:
-            for idx, line in enumerate(f):
-                if max_docs != -1 and idx >= max_docs:
-                    break
-                data = json.loads(line)
-                tokens = tokenizer.tokenize(data[text_key])
-                docid_2_toekns[data["docid"]] = tokens
-                word_count.update(tokens)   
-                
-            for docid, tokens in docid_2_toekns.items():
-                tmp = filter_2_None(tokens, word_count, minimum_word_frequency, stopwords)
-                iindex.add_doc(docid, tmp)
+        if load_file_dir: 
+            iindex.load(load_file_dir)
+            
+        else:   
+            tokenizer = document_preprocessor 
+            
+            docid_2_toekns = {}
+            word_count = Counter()
+            with open(dataset_path, 'r') as f:
+                for idx, line in enumerate(f):
+                    if max_docs != -1 and idx >= max_docs:
+                        break
+                    data = json.loads(line)
+                    tokens = tokenizer.tokenize(data[text_key])
+                    docid_2_toekns[data["docid"]] = tokens
+                    word_count.update(tokens)   
+                    
+                for docid, tokens in docid_2_toekns.items():
+                    tmp = filter_2_None(tokens, word_count, minimum_word_frequency, stopwords)
+                    iindex.add_doc(docid, tmp)
                 
         return iindex
         

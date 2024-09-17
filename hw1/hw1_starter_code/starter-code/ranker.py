@@ -50,6 +50,8 @@ class Ranker:
                 q_count[token] += 1
             else:
                 q_count[token] = 1
+                
+        # print('User query:', q_tokens)
 
         # 2. Fetch a list of possible documents from the index
         # 用这样的方式的话，仅仅包含stopwords overlap的docid就不会被召回了
@@ -67,7 +69,9 @@ class Ranker:
             res_list.append((docid, relevance))
         
         # 3. Return **sorted** results as format [{docid: 100, score:0.5}, {{docid: 10, score:0.2}}]
-        return sorted(res_list, key=lambda x: x[1], reverse=True)
+        res_list = sorted(res_list, key=lambda x: x[1], reverse=True)
+        # print(res_list[:10])
+        return res_list
 
 
 class RelevanceScorer:

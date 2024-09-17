@@ -12,6 +12,7 @@ import pandas as pd
 from ranker import Ranker, WordCountCosineSimilarity, DirichletLM, BM25, PivotedNormalization, TF_IDF, YourRanker
 from document_preprocessor import RegexTokenizer
 from indexing import Indexer, IndexType
+from tqdm import tqdm   
 
 def map_score(search_result_relevances: list[int], cut_off: int = 10) -> float:
     """
@@ -32,7 +33,8 @@ def map_score(search_result_relevances: list[int], cut_off: int = 10) -> float:
     rel = 0
     for score in search_result_relevances[:cut_off]:
         if score == 1:
-            rel += 1
+            rel += 1   
+            
     return rel / len(search_result_relevances[:cut_off])
     
     
@@ -64,11 +66,14 @@ def ndcg_score(search_result_relevances: list[float],
     ideal_relevance_score_ordering = ideal_relevance_score_ordering[:cut_of]
     # Implement DCG
     for i, score in enumerate(search_result_relevances):
-        rel_dcg += (2**score - 1) / (math.log2(i + 2))
+        rel_dcg += (2**score - 1) / (math.log2(i+1+2))
 
     # Implement IDCG
     for i, score in enumerate(ideal_relevance_score_ordering):
-        rel_idcg += (2**score - 1) / (math.log2(i + 2))
+        rel_idcg += (2**score - 1) / (math.log2(i+1+2))
+        
+    if rel_idcg == 0:
+        return 0
         
     return rel_dcg / rel_idcg
 
@@ -94,20 +99,25 @@ def run_relevance_tests(relevance_data_filename: str, ranker) -> dict[str, float
         val_dict.setdefault(df['query'][i], {})
         val_dict[df['query'][i]][df['docid'][i]] = df['rel'][i]
         
+    print(val_dict["How did the Scramble for Africa affect the continent's history and development"])
+        
     # create the index with full document collection: wikipedia_200k_dataset.jsonl
     # TODO: Run each of the dataset's queries through your ranking function
     query_result = {}
-    for query in val_dict.keys():
+    for query in tqdm(val_dict.keys()):
         ranked_doc = ranker.query(query)   
+        # print('召回文档数目：', len(ranked_doc))
+        # print('召回第一分数：', ranked_doc[0][1], '召回第一文档ID: ', ranked_doc[0][0])
         query_result.setdefault(query, {})
         query_result[query]['docid'] = [item[0] for item in ranked_doc]
         map_lable = []
         ndcg_label = []
         for item in ranked_doc:
-            if item[0] in val_dict[query]:
-                map_lable.append(1 if val_dict[query][item[0]] > 3 else 0)
-                ndcg_label.append(val_dict[query][item[0]])
+            if int(item[0]) in val_dict[query]:
+                map_lable.append(1 if val_dict[query][int(item[0])] > 3 else 0)
+                ndcg_label.append(val_dict[query][int(item[0])])
             else:
+                map_lable.append(0)
                 ndcg_label.append(0)
         query_result[query]['map_label'] = map_lable
         query_result[query]['idcg_label'] = ndcg_label
@@ -118,11 +128,13 @@ def run_relevance_tests(relevance_data_filename: str, ranker) -> dict[str, float
     # NOTE: NDCG can use any scoring range, so no conversion is needed.
     # TODO: Compute the average MAP and NDCG across all queries and return the scores
     # NOTE: You should also return the MAP and NDCG scores for each query in a list
-    for query in query_result.keys():
-        query_result[query]['map'] = map_score(query_result[query]['map_label'])
-        query_result[query]['ndcg'] = ndcg_score(query_result[query]['idcg_label'], sorted(query_result[query]['idcg_label'], reverse=True))
+    map_result = []
+    ndcg_result = []
+    for query in tqdm(query_result.keys()):
+        map_result.append(map_score(query_result[query]['map_label']))
+        ndcg_result.append(ndcg_score(query_result[query]['idcg_label'], sorted(query_result[query]['idcg_label'], reverse=True)))
     
-    return {'map': 0, 'ndcg': 0, 'map_list': [], 'ndcg_list': []}
+    return {'map': sum(map_result)/len(map_result), 'ndcg': sum(ndcg_result)/len(ndcg_result), 'map_list': map_result, 'ndcg_list': ndcg_result}
 
 
 if __name__ == '__main__':

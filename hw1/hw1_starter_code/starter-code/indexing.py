@@ -5,6 +5,7 @@ DO NOT use the pickle module.
 '''
 
 from enum import Enum
+from tqdm import tqdm
 from document_preprocessor import Tokenizer
 from collections import Counter, defaultdict
 import json
@@ -282,6 +283,8 @@ class BasicInvertedIndex(InvertedIndex):
                     'document_metadata': self.document_metadata
             }
             json.dump(dict, f, indent=4)
+        print('Complete saving index!')
+        return 
             
     def load(self, dir) -> None:
         file_path = os.path.join(dir, self.statistics['index_type'] + '.json')
@@ -291,6 +294,8 @@ class BasicInvertedIndex(InvertedIndex):
             self.index = dict['index']
             self.vocabulary = set(dict['vocabulary'])
             self.document_metadata = dict['document_metadata']
+        print('Complete loading index!')
+        return 
         
 
 class PositionalInvertedIndex(BasicInvertedIndex):
@@ -421,18 +426,18 @@ class Indexer:
         else:   
             tokenizer = document_preprocessor 
             
-            docid_2_toekns = {}
+            docid_2_tokens = {}
             word_count = Counter()
             with open(dataset_path, 'r') as f:
-                for idx, line in enumerate(f):
+                for idx, line in tqdm(enumerate(f)):
                     if max_docs != -1 and idx >= max_docs:
                         break
                     data = json.loads(line)
                     tokens = tokenizer.tokenize(data[text_key])
-                    docid_2_toekns[data["docid"]] = tokens
+                    docid_2_tokens[data["docid"]] = tokens
                     word_count.update(tokens)   
                     
-                for docid, tokens in docid_2_toekns.items():
+                for docid, tokens in tqdm(docid_2_tokens.items()):
                     tmp = filter_2_None(tokens, word_count, minimum_word_frequency, stopwords)
                     iindex.add_doc(docid, tmp)
                 

@@ -16,7 +16,7 @@ DATA_PATH = 'data/' # TODO: Set this to the path to your data folder
 CACHE_PATH = '__cache__/' # Set this to the path of the cache folder
 
 STOPWORD_PATH = DATA_PATH + 'stopwords.txt'
-DATASET_PATH = DATA_PATH + 'wikipedia_200k_dataset.jsonl.gz'
+DATASET_PATH = DATA_PATH + 'wikipedia_200k_dataset.jsonl'
 
 
 class SearchEngine(BaseSearchEngine):
@@ -38,9 +38,14 @@ class SearchEngine(BaseSearchEngine):
         self.preprocessor = RegexTokenizer('\w+')
 
         self.main_index = Indexer.create_index(
-            IndexType.InvertedIndex, DATASET_PATH, self.preprocessor,
-            self.stopwords, 50, text_key='text', max_docs=max_docs
+            IndexType.BasicInvertedIndex, DATASET_PATH, self.preprocessor,
+            self.stopwords, 50, text_key='text', max_docs=max_docs, load_file_dir='./wiki_index_dir'
         )
+        print('Indexing creation complete!')
+        
+        # self.main_index.save('wiki_index_dir')
+        
+        # print('Indexing saved to ./wiki_index_dir/')
 
         print('Loading ranker...')
         self.set_ranker(ranker)

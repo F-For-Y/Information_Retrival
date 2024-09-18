@@ -60,6 +60,11 @@ class TestSplitTokenizer(unittest.TestCase):
         # TODO - Implement this test
         # You are only required to implement the test case, which we will use for grading. 
         # Nevertheless, we encourage you to implement additional test cases to ensure your code is correct. 
+        text = "Welcome to: United States Department of Energy!"
+        expected_tokens = ['Welcome', 'to', 'United States Department of Energy']
+        tokenizer = RegexTokenizer(lowercase=False, multiword_expressions=mwe_list)
+        tokens = tokenizer.tokenize(text)
+        self.assertEqual(tokens, expected_tokens)
 
 
 ############ =======Test RegexTokenizer=========== ############

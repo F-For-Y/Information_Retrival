@@ -28,6 +28,7 @@ class Ranker:
         self.scorer = scorer
         self.stopwords = stopwords
         self.raw_text_dict = raw_text_dict
+        self.query_len = 0
 
     def query(self, query: str) -> list[tuple[int, float]]:
         """
@@ -43,7 +44,8 @@ class Ranker:
         """
         # 1. Tokenize query
         q_tokens = self.tokenize(query)
-        q_tokens = [token for token in q_tokens if token not in self.stopwords]
+        self.query_len = len(q_tokens)
+        q_tokens = [token if token not in self.stopwords else "$$" for token in q_tokens]
         q_count = {}
         for token in q_tokens:
             if token in q_count:
@@ -138,13 +140,20 @@ class DirichletLM(RelevanceScorer):
 
     def score(self, docid: int, doc_word_counts: dict[str, int], query_word_counts: dict[str, int]) -> float:
         # 1. Get necessary information from index
-
         # 2. Compute additional terms to use in algorithm
-
         # 3. For all query_parts, compute score
-
         # 4. Return the score
-        return NotImplementedError
+        score = 0
+        for term, q_count in query_word_counts.items():
+            if term not in self.index.index or (term in self.index.index and self.index.index[term].get(docid, 0) == 0):
+                continue
+            q_c = query_word_counts[term]
+            second_part = math.log(1 + self.index.index[term][docid] / (self.parameters['mu'] * self.index.statistics['vocab'][term] / self.index.statistics['total_token_count']))
+            score += q_c * second_part
+            
+        score += sum(query_word_counts.values()) * math.log(self.parameters['mu'] / (self.parameters['mu'] + self.index.document_metadata[docid]['length']))
+        
+        return score
 
 
 # TODO Implement BM25
@@ -163,11 +172,6 @@ class BM25(RelevanceScorer):
         for term, q_count in query_word_counts.items():
             if term not in self.index.index or (term in self.index.index and self.index.index[term].get(docid, 0) == 0):
                 continue
-            # 4. Return the score
-            # q_tf = query_word_counts[term]
-            # norm_tf = (1 + math.log(1 + math.log(self.index.index[term][docid]))) / (1 - self.b + self.b * self.index.document_metadata[docid]['length'] / self.index.statistics['mean_document_length'])
-            # idf = math.log((self.index.statistics['number_of_documents']+1) / len(self.index.index[term]))
-            # score += q_tf * norm_tf * idf
             var_idf = math.log((self.index.statistics['number_of_documents'] - len(self.index.index[term]) + 0.5) / (len(self.index.index[term]) + 0.5))
             var_tf = (self.k1 + 1) * self.index.index[term][docid] / (self.k1 * ((1 - self.b) + self.b * self.index.document_metadata[docid]['length'] / self.index.statistics['mean_document_length']) + self.index.index[term][docid])  
             norm_qtf = (self.k3 + 1) * q_count / (self.k3 + q_count)

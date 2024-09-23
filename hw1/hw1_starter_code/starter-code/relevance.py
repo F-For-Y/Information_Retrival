@@ -99,15 +99,11 @@ def run_relevance_tests(relevance_data_filename: str, ranker) -> dict[str, float
         val_dict.setdefault(df['query'][i], {})
         val_dict[df['query'][i]][df['docid'][i]] = df['rel'][i]
         
-    print(val_dict["How did the Scramble for Africa affect the continent's history and development"])
-        
     # create the index with full document collection: wikipedia_200k_dataset.jsonl
     # TODO: Run each of the dataset's queries through your ranking function
     query_result = {}
     for query in tqdm(val_dict.keys()):
         ranked_doc = ranker.query(query)   
-        # print('召回文档数目：', len(ranked_doc))
-        # print('召回第一分数：', ranked_doc[0][1], '召回第一文档ID: ', ranked_doc[0][0])
         query_result.setdefault(query, {})
         query_result[query]['docid'] = [item[0] for item in ranked_doc]
         map_lable = []

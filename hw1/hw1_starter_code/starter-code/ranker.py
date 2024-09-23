@@ -124,10 +124,16 @@ class WordCountCosineSimilarity(RelevanceScorer):
     def score(self, docid: int, doc_word_counts: dict[str, int], query_word_counts: dict[str, int])-> float:
         # 1. Find the dot product of the word count vector of the document and the word count vector of the query
         dot_product = 0
-        for term, q_count in query_word_counts.items():
-            if term not in self.index.index or (term in self.index.index and self.index.index[term].get(docid, 0) == 0):
-                continue
-            dot_product += q_count * self.index.index[term].get(docid)
+        if self.index.statistics['index_type'] == 'BasicInvertedIndex':
+            for term, q_count in query_word_counts.items():
+                if term not in self.index.index or (term in self.index.index and self.index.index[term].get(docid, 0) == 0):
+                    continue
+                dot_product += q_count * self.index.index[term].get(docid)
+        else:
+            for term, q_count in query_word_counts.items():
+                if term not in self.index.index or (term in self.index.index and len(self.index.index[term].get(docid, [])) == 0):
+                    continue
+                dot_product += q_count * len(self.index.index[term].get(docid))
 
         # 2. Return the score
         return dot_product
@@ -144,14 +150,24 @@ class DirichletLM(RelevanceScorer):
         # 3. For all query_parts, compute score
         # 4. Return the score
         score = 0
-        for term, q_count in query_word_counts.items():
-            if term not in self.index.index or (term in self.index.index and self.index.index[term].get(docid, 0) == 0):
-                continue
-            q_c = query_word_counts[term]
-            second_part = math.log(1 + self.index.index[term][docid] / (self.parameters['mu'] * self.index.statistics['vocab'][term] / self.index.statistics['total_token_count']))
-            score += q_c * second_part
-            
-        score += sum(query_word_counts.values()) * math.log(self.parameters['mu'] / (self.parameters['mu'] + self.index.document_metadata[docid]['length']))
+        if self.index.statistics['index_type'] == 'BasicInvertedIndex':
+            for term, q_count in query_word_counts.items():
+                if term not in self.index.index or (term in self.index.index and self.index.index[term].get(docid, 0) == 0):
+                    continue
+                q_c = query_word_counts[term]
+                second_part = math.log(1 + self.index.index[term][docid] / (self.parameters['mu'] * self.index.statistics['vocab'][term] / self.index.statistics['total_token_count']))
+                score += q_c * second_part
+                
+            score += sum(query_word_counts.values()) * math.log(self.parameters['mu'] / (self.parameters['mu'] + self.index.document_metadata[docid]['length']))
+        else:
+            for term, q_count in query_word_counts.items():
+                if term not in self.index.index or (term in self.index.index and len(self.index.index[term].get(docid, [])) == 0):
+                    continue
+                q_c = query_word_counts[term]
+                second_part = math.log(1 + len(self.index.index[term].get(docid)) / (self.parameters['mu'] * self.index.statistics['vocab'][term] / self.index.statistics['total_token_count']))
+                score += q_c * second_part
+                
+            score += sum(query_word_counts.values()) * math.log(self.parameters['mu'] / (self.parameters['mu'] + self.index.document_metadata[docid]['length']))
         
         return score
 
@@ -169,13 +185,22 @@ class BM25(RelevanceScorer):
         # 2. Find the dot product of the word count vector of the document and the word count vector of the query
         # 3. For all query parts, compute the TF and IDF to get a score    
         score = 0
-        for term, q_count in query_word_counts.items():
-            if term not in self.index.index or (term in self.index.index and self.index.index[term].get(docid, 0) == 0):
-                continue
-            var_idf = math.log((self.index.statistics['number_of_documents'] - len(self.index.index[term]) + 0.5) / (len(self.index.index[term]) + 0.5))
-            var_tf = (self.k1 + 1) * self.index.index[term][docid] / (self.k1 * ((1 - self.b) + self.b * self.index.document_metadata[docid]['length'] / self.index.statistics['mean_document_length']) + self.index.index[term][docid])  
-            norm_qtf = (self.k3 + 1) * q_count / (self.k3 + q_count)
-            score += var_idf * var_tf * norm_qtf
+        if self.index.statistics['index_type'] == 'BasicInvertedIndex':
+            for term, q_count in query_word_counts.items():
+                if term not in self.index.index or (term in self.index.index and self.index.index[term].get(docid, 0) == 0):
+                    continue
+                var_idf = math.log((self.index.statistics['number_of_documents'] - len(self.index.index[term]) + 0.5) / (len(self.index.index[term]) + 0.5))
+                var_tf = (self.k1 + 1) * self.index.index[term][docid] / (self.k1 * ((1 - self.b) + self.b * self.index.document_metadata[docid]['length'] / self.index.statistics['mean_document_length']) + self.index.index[term][docid])  
+                norm_qtf = (self.k3 + 1) * q_count / (self.k3 + q_count)
+                score += var_idf * var_tf * norm_qtf
+        else:
+            for term, q_count in query_word_counts.items():
+                if term not in self.index.index or (term in self.index.index and len(self.index.index[term].get(docid, [])) == 0):
+                    continue
+                var_idf = math.log((self.index.statistics['number_of_documents'] - len(self.index.index[term]) + 0.5) / (len(self.index.index[term]) + 0.5))
+                var_tf = (self.k1 + 1) * len(self.index.index[term][docid]) / (self.k1 * ((1 - self.b) + self.b * self.index.document_metadata[docid]['length'] / self.index.statistics['mean_document_length']) + len(self.index.index[term][docid]))  
+                norm_qtf = (self.k3 + 1) * q_count / (self.k3 + q_count)
+                score += var_idf * var_tf * norm_qtf
 
         # 4. Return score
         return score
@@ -192,14 +217,24 @@ class PivotedNormalization(RelevanceScorer):
         # 2. Compute additional terms to use in algorithm
         # 3. For all query parts, compute the TF, IDF, and QTF values to get a score
         score = 0
-        for term, q_count in query_word_counts.items():
-            if term not in self.index.index or (term in self.index.index and self.index.index[term].get(docid, 0) == 0):
-                continue
-            # 4. Return the score
-            q_tf = query_word_counts[term]
-            norm_tf = (1 + math.log(1 + math.log(self.index.index[term][docid]))) / (1 - self.b + self.b * self.index.document_metadata[docid]['length'] / self.index.statistics['mean_document_length'])
-            idf = math.log((self.index.statistics['number_of_documents']+1) / len(self.index.index[term]))
-            score += q_tf * norm_tf * idf
+        if self.index.statistics['index_type'] == 'BasicInvertedIndex':
+            for term, q_count in query_word_counts.items():
+                if term not in self.index.index or (term in self.index.index and self.index.index[term].get(docid, 0) == 0):
+                    continue
+                # 4. Return the score
+                q_tf = query_word_counts[term]
+                norm_tf = (1 + math.log(1 + math.log(self.index.index[term][docid]))) / (1 - self.b + self.b * self.index.document_metadata[docid]['length'] / self.index.statistics['mean_document_length'])
+                idf = math.log((self.index.statistics['number_of_documents']+1) / len(self.index.index[term]))
+                score += q_tf * norm_tf * idf
+        else:
+            for term, q_count in query_word_counts.items():
+                if term not in self.index.index or (term in self.index.index and len(self.index.index[term].get(docid, [])) == 0):
+                    continue
+                # 4. Return the score
+                q_tf = query_word_counts[term]
+                norm_tf = (1 + math.log(1 + math.log(len(self.index.index[term][docid])))) / (1 - self.b + self.b * self.index.document_metadata[docid]['length'] / self.index.statistics['mean_document_length'])
+                idf = math.log((self.index.statistics['number_of_documents']+1) / len(self.index.index[term]))
+                score += q_tf * norm_tf * idf
         
         # 4. Return the score
         return score
@@ -215,13 +250,22 @@ class TF_IDF(RelevanceScorer):
         # 2. Compute additional terms to use in algorithm
         # 3. For all query parts, compute the TF and IDF to get a score
         score = 0
-        for term, q_count in query_word_counts.items():
-            if term not in self.index.index or (term in self.index.index and self.index.index[term].get(docid, 0) == 0):
-                continue
-            # 4. Return the score
-            tf = math.log(1 + self.index.index[term][docid])
-            idf = 1 + math.log(self.index.statistics['number_of_documents'] / len(self.index.index[term]))
-            score += tf * idf
+        if self.index.statistics['index_type'] == 'BasicInvertedIndex':
+            for term, q_count in query_word_counts.items():
+                if term not in self.index.index or (term in self.index.index and self.index.index[term].get(docid, 0) == 0):
+                    continue
+                # 4. Return the score
+                tf = math.log(1 + self.index.index[term][docid])
+                idf = 1 + math.log(self.index.statistics['number_of_documents'] / len(self.index.index[term]))
+                score += tf * idf
+        else:
+            for term, q_count in query_word_counts.items():
+                if term not in self.index.index or (term in self.index.index and len(self.index.index[term].get(docid, [])) == 0):
+                    continue
+                # 4. Return the score
+                tf = math.log(1 + len(self.index.index[term][docid]))
+                idf = 1 + math.log(self.index.statistics['number_of_documents'] / len(self.index.index[term]))
+                score += tf * idf
 
         # 4. Return the score
         return score
@@ -237,14 +281,25 @@ class YourRanker(RelevanceScorer):
         score = 0
         q_len = 0
         overlap = 0
-        for term, q_count in query_word_counts.items():
-            q_len += q_count
-            if term not in self.index.index or (term in self.index.index and self.index.index[term].get(docid, 0) == 0):
-                continue
-            # 4. Return the score
-            overlap += q_count
-            tf = self.index.index[term][docid] / self.index.document_metadata[docid]['length']
-            idf = 1 + math.log(self.index.statistics['number_of_documents'] / len(self.index.index[term]))
-            score += tf * idf
+        if self.index.statistics['index_type'] == 'BasicInvertedIndex':
+            for term, q_count in query_word_counts.items():
+                q_len += q_count
+                if term not in self.index.index or (term in self.index.index and self.index.index[term].get(docid, 0) == 0):
+                    continue
+                # 4. Return the score
+                overlap += q_count
+                tf = self.index.index[term][docid] / self.index.document_metadata[docid]['length']
+                idf = 1 + math.log(self.index.statistics['number_of_documents'] / len(self.index.index[term]))
+                score += tf * idf
+        else:
+            for term, q_count in query_word_counts.items():
+                q_len += q_count
+                if term not in self.index.index or (term in self.index.index and len(self.index.index[term].get(docid, [])) == 0):
+                    continue
+                # 4. Return the score
+                overlap += q_count
+                tf = len(self.index.index[term][docid]) / self.index.document_metadata[docid]['length']
+                idf = 1 + math.log(self.index.statistics['number_of_documents'] / len(self.index.index[term]))
+                score += tf * idf
             
         return score * overlap / q_len 

@@ -305,6 +305,7 @@ class PositionalInvertedIndex(BasicInvertedIndex):
         occurring in the document.
         """
         super().__init__()
+        self.statistics['index_type'] = 'PositionalInvertedIndex'
         
     def add_doc(self, docid: int, tokens: list[str]) -> None:
         doc_length = 0

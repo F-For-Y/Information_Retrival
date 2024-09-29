@@ -31,11 +31,15 @@ def map_score(search_result_relevances: list[int], cut_off: int = 10) -> float:
     """
     # TODO: Implement MAP
     rel = 0
-    for score in search_result_relevances[:cut_off]:
+    rel_at_i = []
+    for i, score in enumerate(search_result_relevances[:cut_off]):
         if score == 1:
             rel += 1   
-            
-    return rel / len(search_result_relevances[:cut_off])
+            rel_at_i.append(rel / (i+1))
+        else:
+            rel_at_i.append(0)  
+        
+    return sum(rel_at_i) / len(search_result_relevances[:cut_off])
     
     
 
@@ -63,14 +67,15 @@ def ndcg_score(search_result_relevances: list[float],
     rel_dcg = 0
     rel_idcg = 0
     search_result_relevances = search_result_relevances[:cut_of]
-    ideal_relevance_score_ordering = ideal_relevance_score_ordering[:cut_of]
+    # ideal_relevance_score_ordering = ideal_relevance_score_ordering[:cut_of]
+    ideal_relevance_score_ordering = sorted(search_result_relevances, reverse=True)
     # Implement DCG
     for i, score in enumerate(search_result_relevances):
-        rel_dcg += (2**score - 1) / (math.log2(i+1+2))
+        rel_dcg += (2 ** score - 1) / (math.log2(i+2))
 
     # Implement IDCG
     for i, score in enumerate(ideal_relevance_score_ordering):
-        rel_idcg += (2**score - 1) / (math.log2(i+1+2))
+        rel_idcg += (2 ** score - 1) / (math.log2(i+2))
         
     if rel_idcg == 0:
         return 0

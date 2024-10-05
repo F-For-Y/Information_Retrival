@@ -1,7 +1,10 @@
 """
 This is the template for implementing the tokenizer for your search engine.
-You will be testing some tokenization techniques.
+You will be testing some tokenization techniques and build your own tokenizer.
 """
+import nltk
+import spacy
+from nltk.tokenize import RegexpTokenizer
 
 
 class Tokenizer:
@@ -17,8 +20,9 @@ class Tokenizer:
                 If set to 'None' no multi-word expression matching is performed.
         """
         # TODO: Save arguments that are needed as fields of this class
-        pass
-
+        self.lowercase = lowercase 
+        self.multiword_expressions = multiword_expressions
+    
     def postprocess(self, input_tokens: list[str]) -> list[str]:
         """
         Performs any set of optional operations to modify the tokenized list of words such as
@@ -30,9 +34,28 @@ class Tokenizer:
         Returns:
             A list of tokens processed by lower-casing depending on the given condition
         """
-        # TODO: Add support for lower-casing and multi-word expressions
-        pass
-
+        # TODO: Add support for lower-casing and multi-word expressions     
+        if input_tokens == []:
+            return []
+           
+        if self.multiword_expressions:
+            # I want to sort the array by the word length from longest to shortest, thus "Taylor Swift" Tour will be detect ahead of "Taylor Swift"
+            sorted_multiword_expressions = sorted(self.multiword_expressions, key=len, reverse=True)
+            text = ' '.join(input_tokens)
+            for multi_exp in sorted_multiword_expressions:
+                if multi_exp in text:
+                    text = text.replace(multi_exp, multi_exp.replace(" ", "$"))
+            output_tokens = text.split(' ')
+            output_tokens = [token.replace("$", " ") for token in output_tokens]
+            if self.lowercase:
+                output_tokens = [token.lower() for token in output_tokens]
+            return output_tokens
+        
+        elif self.lowercase:
+            input_tokens = [token.lower() for token in input_tokens]
+        
+        return input_tokens
+    
     def tokenize(self, text: str) -> list[str]:
         """
         Splits a string into a list of tokens and performs all required postprocessing steps.
@@ -44,8 +67,7 @@ class Tokenizer:
             A list of tokens
         """
         # You should implement this in a subclass, not here
-        raise NotImplementedError(
-            'tokenize() is not implemented in the base class; please use a subclass')
+        raise NotImplementedError('tokenize() is not implemented in the base class; please use a subclass')
 
 
 class SplitTokenizer(Tokenizer):
@@ -71,7 +93,8 @@ class SplitTokenizer(Tokenizer):
         Returns:
             A list of tokens
         """
-        pass
+        tokens = text.split()
+        return self.postprocess(tokens)
 
 
 class RegexTokenizer(Tokenizer):
@@ -88,7 +111,10 @@ class RegexTokenizer(Tokenizer):
         """
         super().__init__(lowercase, multiword_expressions)
         # TODO: Save a new argument that is needed as a field of this class
-        # TODO: Initialize the NLTK's RegexpTokenizer
+        self.token_regex = token_regex  
+        
+        # TODO: Initialize the NLTK's RegexpTokenizer 
+        self.regex_tokenizer = RegexpTokenizer(token_regex)
 
     def tokenize(self, text: str) -> list[str]:
         """
@@ -102,7 +128,8 @@ class RegexTokenizer(Tokenizer):
         """
         # TODO: Tokenize the given text and perform postprocessing on the list of tokens
         #       using the postprocess function
-        pass
+        tokens = self.regex_tokenizer.tokenize(text)
+        return self.postprocess(tokens)
 
 
 class SpaCyTokenizer(Tokenizer):
@@ -118,6 +145,9 @@ class SpaCyTokenizer(Tokenizer):
                 No need to perform/implement multi-word expression recognition for HW3; you can ignore this.
         """
         super().__init__(lowercase, multiword_expressions)
+        self.spacy_tokenizer = spacy.load('en_core_web_sm')
+        self.spacy_tokenizer.add_pipe("merge_entities")
+        
 
     def tokenize(self, text: str) -> list[str]:
         """
@@ -129,7 +159,10 @@ class SpaCyTokenizer(Tokenizer):
         Returns:
             A list of tokens
         """
-        pass
+        document = self.spacy_tokenizer(text)
+        tokens = [token.text for token in document]
+        return self.postprocess(tokens) # 这里可能含有标点符号
+        
 
 
 # Don't forget that you can have a main function here to test anything in the file

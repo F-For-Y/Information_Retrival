@@ -6,6 +6,7 @@ DO NOT use the pickle module.
 
 from enum import Enum
 from tqdm import tqdm
+import pickle
 from document_preprocessor import Tokenizer
 from collections import Counter, defaultdict
 import json
@@ -273,23 +274,23 @@ class BasicInvertedIndex(InvertedIndex):
         # 检查路径是否存在
         if not os.path.exists(dir):
             os.makedirs(dir)
-        file_path = os.path.join(dir, self.statistics['index_type'] + '.json')
+        file_path = os.path.join(dir, self.statistics['index_type'] + '.pickle')
         
-        with open(file_path, 'w') as f:
+        with open(file_path, 'wb') as f:
             dict = {
                     'statistics': self.statistics, 
                     'index': self.index, 
                     'vocabulary': list(self.vocabulary), 
                     'document_metadata': self.document_metadata
             }
-            json.dump(dict, f, indent=4)
+            pickle.dump(dict, f)
         print('Complete saving index!')
         return 
             
     def load(self, dir) -> None:
-        file_path = os.path.join(dir, self.statistics['index_type'] + '.json')
-        with open(file_path, 'r') as f:
-            dict = json.load(f)
+        file_path = os.path.join(dir, self.statistics['index_type'] + '.pickle')
+        with open(file_path, 'rb') as f:
+            dict = pickle.load(f)
             self.statistics = dict['statistics']
             self.index = dict['index']
             self.vocabulary = set(dict['vocabulary'])

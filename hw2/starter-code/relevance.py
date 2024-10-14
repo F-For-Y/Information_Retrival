@@ -8,10 +8,8 @@ Treat search results from your ranking function that are not listed in the file 
 three relevance levels: 0 (non-relevant), 1 (marginally relevant), and 2 (very relevant). 
 """
 import math
+import numpy as np
 import pandas as pd
-from ranker import Ranker, WordCountCosineSimilarity, DirichletLM, BM25, PivotedNormalization, TF_IDF, YourRanker
-from document_preprocessor import RegexTokenizer
-from indexing import Indexer, IndexType
 from tqdm import tqdm   
 
 def map_score(search_result_relevances: list[int], cut_off: int = 10) -> float:
@@ -64,23 +62,16 @@ def ndcg_score(search_result_relevances: list[float],
         The NDCG score
     """
     # TODO: Implement NDCG
-    rel_dcg = 0
-    rel_idcg = 0
-    search_result_relevances = search_result_relevances[:cut_of]
-    # ideal_relevance_score_ordering = ideal_relevance_score_ordering[:cut_of]
-    ideal_relevance_score_ordering = sorted(search_result_relevances, reverse=True)
-    # Implement DCG
-    for i, score in enumerate(search_result_relevances):
-        rel_dcg += (2 ** score - 1) / (math.log2(i+2))
+    def dcg_at_k(relevance_scores, k):
+        relevance_scores = np.asarray(relevance_scores)[:k]
+        dcg = relevance_scores[0] + np.sum(relevance_scores[1:] / np.log2(np.arange(2, relevance_scores.size + 1)))
+        return dcg
 
-    # Implement IDCG
-    for i, score in enumerate(ideal_relevance_score_ordering):
-        rel_idcg += (2 ** score - 1) / (math.log2(i+2))
-        
-    if rel_idcg == 0:
-        return 0
-        
-    return rel_dcg / rel_idcg
+    dcg = dcg_at_k(search_result_relevances, cut_of)
+    idcg = dcg_at_k(ideal_relevance_score_ordering, cut_of)
+
+    ndcg = dcg / idcg if idcg > 0 else 0
+    return ndcg
 
 
 def run_relevance_tests(relevance_data_filename: str, ranker) -> dict[str, float]:
@@ -98,11 +89,11 @@ def run_relevance_tests(relevance_data_filename: str, ranker) -> dict[str, float
     """
     # TODO: Load the relevance csv dataset
     # column query, title, docid, rel
-    df = pd.read_csv(relevance_data_filename)
+    df = pd.read_csv(relevance_data_filename, encoding='ISO-8859-1')
     val_dict = {}
     for i in range(len(df)):
         val_dict.setdefault(df['query'][i], {})
-        val_dict[df['query'][i]][df['docid'][i]] = df['rel'][i]
+        val_dict[df['query'][i]][df['docid'][i]] = math.ceil(df['rel'][i])
         
     # create the index with full document collection: wikipedia_200k_dataset.jsonl
     # TODO: Run each of the dataset's queries through your ranking function

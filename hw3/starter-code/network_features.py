@@ -1,6 +1,9 @@
 from pandas import DataFrame
 from sknetwork.data import from_edge_list
 from sknetwork.ranking import PageRank, HITS
+from tqdm import tqdm
+import numpy as np
+import gzip
 
 
 class NetworkFeatures:
@@ -43,7 +46,22 @@ class NetworkFeatures:
         # and constructing the network took ~75 seconds. We estimate that the entire
         # network construction memory requirement is under 5GB based on tests with
         # the reference implementation.
-        pass
+        edge_list = []
+
+        if network_filename.endswith('.gz'):
+            f = gzip.open(network_filename, 'rt')
+        else:
+            f = open(network_filename, 'r')
+            
+        next(f)
+        for line in tqdm(f):
+            edge_list.append(tuple(map(int, line.strip().split(','))))
+        # assert len(edge_list) == total_edges, f"Expected {total_edges} edges, got {len(edge_list)} edges"
+            
+        f.close()
+        # return the csr_matrix
+        return from_edge_list(edge_list, directed=True, reindex=True)
+        
 
     def calculate_page_rank(self, graph, damping_factor=0.85, iterations=100) -> list[float]:
         """
@@ -60,8 +78,9 @@ class NetworkFeatures:
             The PageRank scores for all nodes in the network (array-like)
         """
         # TODO: Use scikit-network to run Pagerank and return Pagerank scores
-        pass
-
+        pr = PageRank(damping_factor=damping_factor, n_iter=iterations)
+        return list(pr.fit(graph.adjacency).scores_)
+    
     def calculate_hits(self, graph) -> tuple[list[float], list[float]]:
         """
         Calculates the hub scores and authority scores using the HITS algorithm
@@ -77,7 +96,12 @@ class NetworkFeatures:
 
         # NOTE: When returning the HITS scores, the returned tuple should have the hub scores in index 0 and
         #       authority score in index 1
-        pass
+        hits = HITS()
+        hits.fit(graph.adjacency)
+        hubs = list(hits.scores_row_)
+        authorities = list(hits.scores_col_)
+        return (hubs, authorities)
+        
 
     def get_all_network_statistics(self, graph) -> DataFrame:
         """
@@ -102,4 +126,9 @@ class NetworkFeatures:
         # the L2R features.
 
         # NOTE Return the dataframe and save the dataframe as a CSV or JSON
-        pass
+        pr_scores = self.calculate_page_rank(graph)
+        hub_scores, authority_scores = self.calculate_hits(graph)
+        
+        df = DataFrame({'docid': list(graph.names), 'pagerank': pr_scores, 'authority_score': authority_scores, 'hub_score': hub_scores})
+        return df
+        

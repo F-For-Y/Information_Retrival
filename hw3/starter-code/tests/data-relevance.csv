@@ -1,0 +1,8 @@
+query,docid,rel
+ai,1,1
+ai,2,3
+ai,4,1
+ai ml,1,5
+ai ml,2,1
+ai ml,3,1
+ai ml,4,2

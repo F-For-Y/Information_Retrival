@@ -110,9 +110,9 @@ def run_relevance_tests(relevance_data_filename: str, ranker) -> dict[str, float
                 ndcg_label.append(val_dict[query][int(item[0])])
             else:
                 map_lable.append(0)
-                ndcg_label.append(0)
+                ndcg_label.append(1)
         query_result[query]['map_label'] = map_lable
-        query_result[query]['idcg_label'] = ndcg_label
+        query_result[query]['ndcg_label'] = ndcg_label
     
     # TODO: For each query's result, calculate the MAP and NDCG for every single query and average them out\
     # NOTE: MAP requires using binary judgments of relevant (1) or not (0). You should use relevance 
@@ -124,7 +124,7 @@ def run_relevance_tests(relevance_data_filename: str, ranker) -> dict[str, float
     ndcg_result = []
     for query in tqdm(query_result.keys()):
         map_result.append(map_score(query_result[query]['map_label']))
-        ndcg_result.append(ndcg_score(query_result[query]['idcg_label'], sorted(query_result[query]['idcg_label'], reverse=True)))
+        ndcg_result.append(ndcg_score(query_result[query]['ndcg_label'], sorted(query_result[query]['ndcg_label'], reverse=True)))
     
     return {'map': sum(map_result)/len(map_result), 'ndcg': sum(ndcg_result)/len(ndcg_result), 'map_list': map_result, 'ndcg_list': ndcg_result}
 

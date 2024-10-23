@@ -7,11 +7,12 @@ import pandas as pd
 from collections import Counter
 from ranker import *
 import json, math
+from tqdm import tqdm
 
 
 class L2RRanker:
     def __init__(self, document_index: InvertedIndex, title_index: InvertedIndex,
-                 document_preprocessor: Tokenizer, stopwords: set[str], ranker: Ranker,
+                 document_preprocessor: Tokenizer, stopwords: set[str], ranker: Ranker, # 在粗排中这里的ranker可以是BM25, 也可以是VectorRanker
                  feature_extractor: 'L2RFeatureExtractor') -> None:
         """
         Initializes a L2RRanker model.
@@ -21,7 +22,7 @@ class L2RRanker:
             title_index: The inverted index for the contents of the document's title
             document_preprocessor: The DocumentPreprocessor to use for turning strings into tokens
             stopwords: The set of stopwords to use or None if no stopword filtering is to be done
-            scorer: The relevance scorer
+            ranker: The Ranker object ** hw3 modified **
             feature_extractor: The L2RFeatureExtractor object
         """
         # TODO: Save any arguments that are needed as fields of this class
@@ -68,7 +69,7 @@ class L2RRanker:
 
         # TODO: Make sure to keep track of how many scores we have for this query in qrels
 
-        for query, doc_rel_list in query_to_document_relevance_scores.items():
+        for query, doc_rel_list in tqdm(query_to_document_relevance_scores.items()):
             query_parts = self.document_preprocessor.tokenize(query)
             if self.stopwords:
                 query_parts = [token for token in query_parts if token not in self.stopwords]
@@ -83,7 +84,7 @@ class L2RRanker:
                 # Get word counts and generate features
                 doc_counts = doc_word_counts.get(docid, {})
                 title_counts = title_word_counts.get(docid, {})
-                features = self.feature_extractor.generate_features(docid, doc_counts, title_counts, query_parts)
+                features = self.feature_extractor.generate_features(docid, doc_counts, title_counts, query_parts, raw_query=query)
                 if not features:
                     num_docs -= 1
                     continue
@@ -160,8 +161,10 @@ class L2RRanker:
                 query_to_document_relevance_scores_dev[query].append((docid, math.ceil(relevance)))
 
             X_dev, y_dev, qgroups_dev = self.prepare_training_data(query_to_document_relevance_scores_dev)
+            print('Start to train the model with dev data......')
             self.model.fit(X, y, qgroups, X_dev, y_dev, np.array(qgroups_dev))
         else:
+            print('Start to train the model without dev data......')
             self.model.fit(X, y, qgroups)
 
     def predict(self, X):
@@ -217,13 +220,14 @@ class L2RRanker:
         # TODO: Score and sort the documents by the provided scrorer for just the document's main text (not the title)
         # This ordering determines which documents we will try to *re-rank* using our L2R model
         candidate_docs_scores = []
-        for docid in candidate_docs:
-            doc_counts = doc_word_counts.get(docid, {})
-            score = self.scorer.score(docid, doc_counts, query_word_counts)
-            candidate_docs_scores.append((docid, score))
+        # for docid in candidate_docs:
+        #     doc_counts = doc_word_counts.get(docid, {})
+        #     score = self.scorer.score(docid, doc_counts, query_word_counts)
+        #     candidate_docs_scores.append((docid, score))
+        candidate_docs_scores = self.scorer.query(query)
 
         # TODO: Filter to just the top 100 documents for the L2R part for re-ranking
-        candidate_docs_scores.sort(key=lambda x: x[1], reverse=True)
+        # candidate_docs_scores.sort(key=lambda x: x[1], reverse=True)
         top_100_docs_scores = candidate_docs_scores[:100]
 
         # TODO: Construct the feature vectors for each query-document pair in the top 100
@@ -232,7 +236,7 @@ class L2RRanker:
         for docid, _ in top_100_docs_scores:
             doc_counts = doc_word_counts.get(docid, {})
             title_counts = title_word_counts.get(docid, {})
-            features = self.feature_extractor.generate_features(docid, doc_counts, title_counts, query_parts)
+            features = self.feature_extractor.generate_features(docid, doc_counts, title_counts, query_parts, raw_query=query)
             X.append(features)
             docids.append(docid)
 
@@ -254,7 +258,8 @@ class L2RFeatureExtractor:
     def __init__(self, document_index: InvertedIndex, title_index: InvertedIndex,
                  doc_category_info: dict[int, list[str]],
                  document_preprocessor: Tokenizer, stopwords: set[str],
-                 recognized_categories: set[str], docid_to_network_features: dict[int, dict[str, float]]) -> None:
+                 recognized_categories: set[str], docid_to_network_features: dict[int, dict[str, float]],
+                 ce_scorer: CrossEncoderScorer) -> None:
         """
         Initializes a L2RFeatureExtractor object.
 
@@ -288,6 +293,7 @@ class L2RFeatureExtractor:
         
         self.bm25 = BM25(document_index)
         self.pivot_norm = PivotedNormalization(document_index)
+        self.cross_encoder = ce_scorer
 
     # TODO: Article Length
     def get_article_length(self, docid: int) -> int:
@@ -478,11 +484,25 @@ class L2RFeatureExtractor:
             The HITS authority score
         """
         return self.docid_to_network_features[docid].get("authority_score", 0)
+    
+    # TODO (HW3): Cross-Encoder Score
+    def get_cross_encoder_score(self, docid: int, query: str) -> float:
+        """
+        Gets the cross-encoder score for the given document.
+
+        Args:
+            docid: The id of the document
+            query: The query in its original form (no stopword filtering/tokenization)
+
+        Returns:
+            The Cross-Encoder score
+        """        
+        return self.cross_encoder.score(docid, query)
 
     # TODO 11: Add at least one new feature to be used with your L2R model.
 
     def generate_features(self, docid: int, doc_word_counts: dict[str, int],
-                          title_word_counts: dict[str, int], query_parts: list[str]) -> list:
+                          title_word_counts: dict[str, int], query_parts: list[str], raw_query : str = None) -> list:
         """
         Generates a dictionary of features for a given document and query.
 
@@ -546,6 +566,10 @@ class L2RFeatureExtractor:
         # TODO: HITS Authority
         hits_authority_score = self.get_hits_authority_score(docid)
         feature_vector.append(hits_authority_score)
+        
+        # TODO: (HW3) Cross-Encoder Score
+        cross_encoder_score = self.get_cross_encoder_score(docid, raw_query)
+        feature_vector.append(cross_encoder_score)
 
         # TODO: Add at least one new feature to be used with your L2R model.
         # Additional Feature: Query Term Coverage in Document

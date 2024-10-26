@@ -124,13 +124,16 @@ class L2RRanker:
                     doc_term_counts[docid][term] = freq
         return doc_term_counts
 
-    def train(self, training_data_filename: str, dev_data_filename: str = None) -> None:
+    def train(self, training_data_filename: str, dev_data_filename: str = None, train_dev_file_dir: str = None) -> None:
         """
         Trains a LambdaMART pair-wise learning to rank model using the documents and relevance scores provided 
         in the training data file.
 
         Args:
             training_data_filename (str): a filename for a file containing documents and relevance scores
+            
+        Training and Validation Process:
+            - 先用BM25 retrieve top 100 documents, 然后让model learn to re-rank
         """
         # TODO: Convert the relevance data into the right format for training data preparation
 
@@ -138,29 +141,69 @@ class L2RRanker:
         # getting the necessary datastructures
 
         # TODO: Train the model
+        # Check if the train file has been preprocessed: train_file_dir
+        if train_dev_file_dir is not None: # 为了节约时间，不然重新加载一次又要半小时
+            data = np.load(train_dev_file_dir)
+            X, y, qgroups = data['X_train'].tolist(), data['Y_label'].tolist(), data['qgroups'].tolist()
+            X_dev, y_dev, qgroups_dev = data['X_dev'].tolist(), data['Y_dev_label'].tolist(), data['qgroups_dev'].tolist()
+            print(f"Train and Dev Data has been loaded from {train_dev_file_dir}......X_shape: {np.array(X).shape}, y_shape: {np.array(y).shape}, qgroups_shape: {np.array(qgroups).shape}")
+            self.model.fit(X, y, qgroups, X_dev, y_dev, np.array(qgroups_dev))
+            return 
+            
         query_to_document_relevance_scores = {}
-        df = pd.read_csv(training_data_filename, encoding='ISO-8859-1')    
-        for i, row in df.iterrows():
-            query, docid, relevance = row['query'], row['docid'], row['rel']
-            if query not in query_to_document_relevance_scores:
-                query_to_document_relevance_scores[query] = []
-            query_to_document_relevance_scores[query].append((docid, math.ceil(relevance))) # 这里的rel可能不是整数
+        df = pd.read_csv(training_data_filename, encoding='ISO-8859-1')     
+        val_dict = {} # {QUERYU: {DOCID: REL}} 这里是train, dev, test set中有标注得 (docid, rel) pair
+        for i in range(len(df)):
+            val_dict.setdefault(df['query'][i], {})
+            val_dict[df['query'][i]][df['docid'][i]] = math.ceil(df['rel'][i])
+            
+        # we only want top100 documents
+        for query in tqdm(val_dict.keys()):
+            roughtly_ranked_doc = self.scorer.query(query)[:100]
+            for docid, _ in roughtly_ranked_doc:
+                if query not in query_to_document_relevance_scores:
+                        query_to_document_relevance_scores[query] = []
+                if docid in val_dict[query]:
+                    query_to_document_relevance_scores[query].append((docid, val_dict[query][docid]))
+                else:
+                    query_to_document_relevance_scores[query].append((docid, 1)) # 不存在于标注数据中的doc, 默认rel=1
+                    
+        # for i, row in df.iterrows():
+        #     query, docid, relevance = row['query'], row['docid'], row['rel']
+        #     if query not in query_to_document_relevance_scores:
+        #         query_to_document_relevance_scores[query] = []
+        #     query_to_document_relevance_scores[query].append((docid, math.ceil(relevance))) # 这里的rel可能不是整数
 
         # Prepare the training data
         # print(len(list(query_to_document_relevance_scores.keys())))
         X, y, qgroups = self.prepare_training_data(query_to_document_relevance_scores)
+        print(f"Train Data has been prepared......X_shape: {np.array(X).shape}, y_shape: {np.array(y).shape}, qgroups_shape: {np.array(qgroups).shape}") 
         
         # 是否指定dev_data_filename: 
         if dev_data_filename:
             query_to_document_relevance_scores_dev = {}
-            df = pd.read_csv(dev_data_filename, encoding='ISO-8859-1')    
-            for i, row in df.iterrows():
-                query, docid, relevance = row['query'], row['docid'], row['rel']
-                if query not in query_to_document_relevance_scores_dev:
-                    query_to_document_relevance_scores_dev[query] = []
-                query_to_document_relevance_scores_dev[query].append((docid, math.ceil(relevance)))
+            df_dev = pd.read_csv(dev_data_filename, encoding='ISO-8859-1')
+            val_dict_dev = {} # {QUERYU: {DOCID: REL}} 这里是train, dev, test set中有标注得 (docid, rel) pair
+            for i in range(len(df_dev)):
+                val_dict_dev.setdefault(df_dev['query'][i], {})
+                val_dict_dev[df_dev['query'][i]][df_dev['docid'][i]] = math.ceil(df_dev['rel'][i])
+                
+            # we only want top100 documents
+            for query in tqdm(val_dict_dev.keys()):
+                roughtly_ranked_doc = self.scorer.query(query)[:100]
+                for docid, _ in roughtly_ranked_doc:
+                    if query not in query_to_document_relevance_scores_dev:
+                            query_to_document_relevance_scores_dev[query] = []
+                    if docid in val_dict_dev[query]:
+                        query_to_document_relevance_scores_dev[query].append((docid, val_dict_dev[query][docid]))
+                    else:
+                        query_to_document_relevance_scores_dev[query].append((docid, 1))
 
             X_dev, y_dev, qgroups_dev = self.prepare_training_data(query_to_document_relevance_scores_dev)
+            if train_dev_file_dir is None:
+                np.savez('./cache/rel_train_dev.npz', X_dev = np.array(X_dev), Y_dev_label = np.array(y_dev), qgroups_dev = np.array(qgroups_dev), X_train = np.array(X), Y_label = np.array(y), qgroups = np.array(qgroups))
+                print('Dev and Train Data has been saved to ./cache/rel_dev.npy......')
+            print(f"Dev Data has been prepared......X_dev_shape: {np.array(X_dev).shape}, y_dev_shape: {np.array(y_dev).shape}, qgroups_dev_shape: {np.array(qgroups_dev).shape}")
             print('Start to train the model with dev data......')
             self.model.fit(X, y, qgroups, X_dev, y_dev, np.array(qgroups_dev))
         else:

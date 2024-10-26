@@ -2,6 +2,7 @@
 This is the template for implementing the rankers for your search engine.
 You will be implementing WordCountCosineSimilarity, DirichletLM, TF-IDF, BM25, Pivoted Normalization, and your own ranker.
 """
+from sentence_transformers import CrossEncoder
 from indexing import InvertedIndex
 import math
 
@@ -297,6 +298,8 @@ class CrossEncoderScorer:
             cross_encoder_model_name: The name of a cross-encoder model
         """
         # TODO: Save any new arguments that are needed as fields of this class
+        self.raw_text_dict = raw_text_dict
+        self.model = CrossEncoder(cross_encoder_model_name, max_length=512)
 
     def score(self, docid: int, query: str) -> float:
         """
@@ -317,4 +320,10 @@ class CrossEncoderScorer:
 
         # TODO (HW3): Get a score from the cross-encoder model
         #             Refer to IR_Encoder_Examples.ipynb in Demos folder on Canvas if needed
-        pass
+        docs = self.raw_text_dict.get(docid, '')
+        if not docs or not query:
+            return 0
+        pairs = [(query, docs)]
+        scores = self.model.predict(pairs)
+        return scores[0]
+        

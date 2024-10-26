@@ -188,6 +188,8 @@ class Doc2QueryAugmenter:
         self.device = torch.device('cpu')  # Do not change this unless you know what you are doing
 
         # TODO (HW3): Create the dense tokenizer and query generation model using HuggingFace transformers
+        self.tokenizer = T5Tokenizer.from_pretrained(doc2query_model_name)
+        self.model = T5ForConditionalGeneration.from_pretrained(doc2query_model_name).to(self.device)
 
     def get_queries(self, document: str, n_queries: int = 5, prefix_prompt: str = '') -> list[str]:
         """
@@ -225,7 +227,22 @@ class Doc2QueryAugmenter:
         # TODO (HW3): For the given model, generate a list of queries that might reasonably be issued to search
         #       for that document
         # NOTE: Do not forget edge cases
-        pass
+        if not document:
+            return []  
+        if n_queries < 1:
+            n_queries = 1
+            
+        input_text = prefix_prompt + document
+        inputs = self.tokenizer.encode(input_text, return_tensors='pt', max_length=document_max_token_length, truncation=True).to(self.device)
+        query_outputs = self.model.generate(
+            inputs,
+            do_sample=True,  
+            max_length=64,  
+            num_return_sequences=n_queries,  
+            top_p=top_p,
+        )
+        queries = [self.tokenizer.decode(output, skip_special_tokens=True) for output in query_outputs]
+        return queries
 
 
 # Don't forget that you can have a main function here to test anything in the file

@@ -22,11 +22,12 @@ class VectorRanker(Ranker):
 
         # NOTE: we're going to use the cpu for everything here so if you decide to use a GPU, do not 
         # submit that code to the autograder
-        self.biencoder_model = None # Initialize the bi-encoder model here
+        self.biencoder_model = SentenceTransformer(bi_encoder_model_name) # Initialize the bi-encoder model here
         
         # TODO: Also include other necessary initialization code
-        pass
-
+        self.encoded_docs = encoded_docs
+        self.row_to_docid = row_to_docid
+        
     def query(self, query: str) -> list[tuple[int, float]]:
         """
         Encodes the query and then scores the relevance of the query with all the documents.
@@ -49,5 +50,11 @@ class VectorRanker(Ranker):
         # TODO: Generate the ordered list of (document id, score) tuples
 
         # TODO: Sort the list so most relevant are first
-        pass
+        if not query.strip():
+            return []
+        query_embedding = self.biencoder_model.encode(query, convert_to_tensor=True)
+        similarity_scores = util.cos_sim(query_embedding, self.encoded_docs)[0].cpu().numpy()
+        docid_score_pairs = [(self.row_to_docid[i], score) for i, score in enumerate(similarity_scores)]
+        sorted_docid_score_pairs = sorted(docid_score_pairs, key=lambda x: x[1], reverse=True)
+        return sorted_docid_score_pairs
 

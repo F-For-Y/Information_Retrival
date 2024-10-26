@@ -5,15 +5,20 @@ DO NOT use the pickle module.
 '''
 
 from enum import Enum
+from tqdm import tqdm
 from document_preprocessor import Tokenizer
 from collections import Counter, defaultdict
+import pickle
+import time
+import json
+import os
 
 
 class IndexType(Enum):
     # the two types of index currently supported are BasicInvertedIndex, PositionalIndex
     PositionalIndex = 'PositionalIndex'
     BasicInvertedIndex = 'BasicInvertedIndex'
-    SampleIndex = 'SampleIndex'
+    # SampleIndex = 'SampleIndex'
 
 
 class InvertedIndex:
@@ -28,13 +33,14 @@ class InvertedIndex:
         An inverted index implementation where everything is kept in memory
         """
         self.statistics = {}   # the central statistics of the index
-        self.statistics['vocab'] = Counter()  # token count
+        self.statistics['vocab'] = Counter() # token count
         self.vocabulary = set()  # the vocabulary of the collection
-        # metadata like length, number of unique tokens of the documents
-        self.document_metadata = {}
+        self.document_metadata = {} # metadata like length, number of unique tokens of the documents
+        self.term_metadata = {}  # metadata like term count, document frequency of the terms
 
-        self.index = defaultdict(list)  # the index
+        self.index = {}  # the index 
 
+    
     # NOTE: The following functions have to be implemented in the two inherited classes and not in this class
 
     def remove_doc(self, docid: int) -> None:
@@ -105,7 +111,7 @@ class InvertedIndex:
             A dictionary with metadata about the term in the index
         """
         raise NotImplementedError
-
+    
     def get_statistics(self) -> dict[str, int]:
         """
         Returns a dictionary with properties and their values for the index.
@@ -122,7 +128,7 @@ class InvertedIndex:
         """
         raise NotImplementedError
 
-    def save(self, index_directory_name: str) -> None:
+    def save(self) -> None:
         """
         Saves the state of this index to the provided directory.
         The save state should include the inverted index as well as
@@ -133,7 +139,7 @@ class InvertedIndex:
         """
         raise NotImplementedError
 
-    def load(self, index_directory_name: str) -> None:
+    def load(self) -> None:
         """
         Loads the inverted index and any associated metadata from files located in the directory.
         This method will only be called after save() has been called, so the directory should
@@ -155,7 +161,145 @@ class BasicInvertedIndex(InvertedIndex):
         """
         super().__init__()
         self.statistics['index_type'] = 'BasicInvertedIndex'
+        self.statistics['unique_token_count'] = 0  # the number of unique tokens in the index
+        self.statistics['total_token_count'] = 0 # the number of total tokens in the index, i.e., the sum of the lengths of all documents
+        self.statistics['stored_total_token_count'] = 0 # the number of total tokens in the index excluding filter tokens
+        self.statistics['number_of_documents'] = 0 # the number of documents indexed
+        self.statistics['mean_document_length'] = 0 # the mean number of tokens in a document including filter tokens
+    
+    def add_doc(self, docid: int, tokens: list[str]) -> None:
+        doc_length = 0
+        stored_doc_length = 0   
+        unique_tokens = set()
 
+        # 1. update the self.index
+        for token in tokens:
+            doc_length += 1
+            if token is not None:
+                stored_doc_length += 1
+                # vocab
+                self.statistics['vocab'][token] += 1
+                # index
+                if token not in self.index:
+                    self.index[token] = {}
+                    self.index[token].setdefault(docid, 0)
+                elif docid not in self.index[token]:
+                    self.index[token].setdefault(docid, 0)
+                self.index[token][docid] += 1 
+                
+                unique_tokens.add(token)
+                
+
+        # 2. update doc_metadata
+        self.document_metadata[docid] = {
+            "unique_tokens": len(unique_tokens),
+            "length": doc_length,
+            "sotred_length": stored_doc_length,
+            "unique_tokens_list": list(unique_tokens)
+        }
+        
+        # 3. update the self.statistics (including term metadata)
+        self.vocabulary.update(unique_tokens)
+        self.statistics['total_token_count'] += doc_length
+        self.statistics['stored_total_token_count'] += stored_doc_length
+        self.statistics['number_of_documents'] += 1
+        if self.statistics['number_of_documents'] == 0:
+            self.statistics['mean_document_length'] = 0
+        else:
+            self.statistics['mean_document_length'] = self.statistics['total_token_count'] / self.statistics['number_of_documents']
+        self.statistics['unique_token_count'] = len(self.vocabulary)
+        
+    def remove_doc(self, docid: int) -> None:
+        if docid in self.document_metadata:
+            # 1. update the self.index
+            self.statistics['total_token_count'] -= self.document_metadata[docid]['length']
+            self.statistics['stored_total_token_count'] -= self.document_metadata[docid]['sotred_length']
+            self.statistics['number_of_documents'] -= 1
+            if self.statistics['number_of_documents'] == 0:
+                self.statistics['mean_document_length'] = 0
+            else:
+                self.statistics['mean_document_length'] = self.statistics['total_token_count'] / self.statistics['number_of_documents']
+            
+            # 2. update the self.statistics (including term metadata)
+            for token in self.document_metadata[docid]['unique_tokens_list']:
+                self.statistics['vocab'][token] -= self.index[token][docid]
+                if self.statistics['vocab'][token] == 0:
+                    del self.statistics['vocab'][token]
+                    self.vocabulary.remove(token)
+                    del self.index[token]
+                else:
+                    del self.index[token][docid]
+                
+            self.statistics['unique_token_count'] = len(self.vocabulary)
+            
+            # 3. update doc_metadata
+            del self.document_metadata[docid]
+        
+    def get_postings(self, term: str) -> list:
+        if term not in self.vocabulary:
+            return []
+        return [(docid, self.index[term][docid]) for docid in self.index[term]]
+    
+    def get_doc_metadata(self, doc_id: int) -> dict[str, int]:
+        if doc_id not in self.document_metadata:
+            return {
+                "unique_tokens": 0,
+                "length": 0
+            }
+        return {
+            "unique_tokens": self.document_metadata[doc_id]['unique_tokens'],
+            "length": self.document_metadata[doc_id]['length']
+        }
+    
+    def get_term_metadata(self, term: str) -> dict[str, int]:
+        if term not in self.statistics['vocab']:
+            return {
+                "term_count": 0,
+                "doc_frequency": 0
+            }
+        return {
+                "term_count": self.statistics['vocab'][term],
+                "doc_frequency": self.index[term].__len__()
+            }
+        
+    def get_statistics(self) -> dict[str, int]:
+        result = {
+            "unique_token_count": self.statistics['unique_token_count'],
+            "total_token_count": self.statistics['total_token_count'],
+            "stored_total_token_count": self.statistics['stored_total_token_count'],
+            "number_of_documents": self.statistics['number_of_documents'],
+            "mean_document_length": self.statistics['mean_document_length']
+        }
+        return result
+        
+    def save(self, dir) -> None:
+        # 检查路径是否存在
+        if not os.path.exists(dir):
+            os.makedirs(dir)
+        file_path = os.path.join(dir, self.statistics['index_type'] + '.pickle')
+        
+        with open(file_path, 'wb') as f:
+            dict = {
+                    'statistics': self.statistics, 
+                    'index': self.index, 
+                    'vocabulary': list(self.vocabulary), 
+                    'document_metadata': self.document_metadata
+            }
+            pickle.dump(dict, f)
+        print('Complete saving index!')
+        return 
+            
+    def load(self, dir) -> None:
+        file_path = os.path.join(dir, self.statistics['index_type'] + '.pickle')
+        with open(file_path, 'rb') as f:
+            dict = pickle.load(f)
+            self.statistics = dict['statistics']
+            self.index = dict['index']
+            self.vocabulary = set(dict['vocabulary'])
+            self.document_metadata = dict['document_metadata']
+        print('Complete loading index!')
+        return 
+        
 
 class PositionalInvertedIndex(BasicInvertedIndex):
     def __init__(self) -> None:
@@ -164,6 +308,80 @@ class PositionalInvertedIndex(BasicInvertedIndex):
         occurring in the document.
         """
         super().__init__()
+        self.statistics['index_type'] = 'PositionalInvertedIndex'
+        
+    def add_doc(self, docid: int, tokens: list[str]) -> None:
+        doc_length = 0
+        stored_doc_length = 0   
+        unique_tokens = set()
+
+        # 1. update the self.index
+        for position, token in enumerate(tokens):
+            doc_length += 1
+            if token is not None:
+                stored_doc_length += 1
+                # vocab
+                self.statistics['vocab'][token] += 1
+                # index
+                if token not in self.index:
+                    self.index[token] = {}
+                    self.index[token].setdefault(docid, [])
+                elif docid not in self.index[token]:
+                    self.index[token].setdefault(docid, [])
+                self.index[token][docid].append(position)
+                
+                unique_tokens.add(token)
+                
+
+        # 2. update doc_metadata
+        self.document_metadata[docid] = {
+            "unique_tokens": len(unique_tokens),
+            "length": doc_length,
+            "sotred_length": stored_doc_length,
+            "unique_tokens_list": list(unique_tokens)
+        }
+        
+        # 3. update the self.statistics (including term metadata)
+        self.vocabulary.update(unique_tokens)
+        self.statistics['total_token_count'] += doc_length
+        self.statistics['stored_total_token_count'] += stored_doc_length
+        self.statistics['number_of_documents'] += 1
+        if self.statistics['number_of_documents'] == 0:
+            self.statistics['mean_document_length'] = 0
+        else:
+            self.statistics['mean_document_length'] = self.statistics['total_token_count'] / self.statistics['number_of_documents']
+        self.statistics['unique_token_count'] = len(self.vocabulary)
+        
+    def remove_doc(self, docid: int) -> None:
+        if docid in self.document_metadata:
+            # 1. update the self.index
+            self.statistics['total_token_count'] -= self.document_metadata[docid]['length']
+            self.statistics['stored_total_token_count'] -= self.document_metadata[docid]['sotred_length']
+            self.statistics['number_of_documents'] -= 1
+            if self.statistics['number_of_documents'] == 0:
+                self.statistics['mean_document_length'] = 0
+            else:
+                self.statistics['mean_document_length'] = self.statistics['total_token_count'] / self.statistics['number_of_documents']
+            
+            # 2. update the self.statistics (including term metadata)
+            for token in self.document_metadata[docid]['unique_tokens_list']:
+                self.statistics['vocab'][token] -= len(self.index[token][docid])
+                if self.statistics['vocab'][token] == 0:
+                    del self.statistics['vocab'][token]
+                    self.vocabulary.remove(token)
+                    del self.index[token]
+                else:
+                    del self.index[token][docid]
+                
+            self.statistics['unique_token_count'] = len(self.vocabulary)
+            
+            # 3. update doc_metadata
+            del self.document_metadata[docid]
+        
+    def get_postings(self, term: str) -> list:
+        if term not in self.vocabulary:
+            return []
+        return [(docid, len(self.index[term][docid]), self.index[term][docid]) for docid in self.index[term]]
 
 
 class Indexer:
@@ -175,7 +393,7 @@ class Indexer:
     def create_index(index_type: IndexType, dataset_path: str,
                      document_preprocessor: Tokenizer, stopwords: set[str],
                      minimum_word_frequency: int, text_key="text",
-                     max_docs: int = -1, doc_augment_dict: dict[int, list[str]] | None = None) -> InvertedIndex:
+                     max_docs: int = -1, doc_augment_dict: dict[int, list[str]] | None = None, load_file_dir: str = None) -> InvertedIndex:
         '''
         This function is responsible for going through the documents one by one and inserting them into the index after tokenizing the document
 
@@ -197,30 +415,49 @@ class Indexer:
             An inverted index
 
         '''
-         # TODO (HW3): This function now has an optional argument doc_augment_dict; check README.md
-       
-        # HINT: Think of what to do when doc_augment_dict exists, how can you deal with the extra information?
-        #       How can you use that information with the tokens?
-        #       If doc_augment_dict doesn't exist, it's the same as before, tokenizing just the document text
-          
-        # TODO: Implement this class properly. This is responsible for going through the documents
-        #       one by one and inserting them into the index after tokenizing the document
-
-        # TODO: Figure out what type of InvertedIndex to create.
-        #       For HW3, only the BasicInvertedIndex is required to be supported
-
-        # TODO: If minimum word frequencies are specified, process the collection to get the
-        #       word frequencies
-
-        # NOTE: Make sure to support both .jsonl.gz and .jsonl as input
-                      
-        # TODO: Figure out which set of words to not index because they are stopwords or
-        #       have too low of a frequency
-
-        # TODO: Read the collection and process/index each document.
-        #       Only index the terms that are not stopwords and have high-enough frequency
-
-        raise NotImplementedError
+        def filter_2_None(token_list, word_count, min_freq, stop_words):
+            new_list = [word if (word not in stop_words and word_count[word] >= min_freq) else None for word in token_list]
+            return new_list
+        
+        iindex = None
+        if index_type == IndexType.BasicInvertedIndex:
+            iindex = BasicInvertedIndex()
+        elif index_type == IndexType.PositionalIndex:
+            iindex = PositionalInvertedIndex()
+            
+        if load_file_dir: 
+            iindex.load(load_file_dir)
+            
+        else:   
+            tokenizer = document_preprocessor 
+            docid_2_tokens = {}
+            word_count = Counter()
+            docid_list = []
+            with open(dataset_path, 'r') as f:
+                for idx, line in tqdm(enumerate(f)):
+                    if max_docs != -1 and idx >= max_docs:
+                        break
+                    data = json.loads(line)
+                    docid = data["docid"]
+                    data_text = data[text_key]
+                    if doc_augment_dict and docid in doc_augment_dict:
+                        try:
+                            data_text = ' '.join(doc_augment_dict[docid]) + ' ' + data_text # since we are implementing the basic inverted index, position of appending doesn't matter
+                        except:
+                            print(docid)
+                            print(doc_augment_dict[docid])
+                    tokens = tokenizer.tokenize(data_text)
+                    docid_2_tokens[docid] = tokens
+                    word_count.update(tokens)   
+                docid_list = list(docid_2_tokens.keys())   
+                
+            for docid in tqdm(docid_list):
+                tokens = docid_2_tokens[docid]
+                tmp = filter_2_None(tokens, word_count, minimum_word_frequency, stopwords)
+                iindex.add_doc(docid, tmp)
+                del docid_2_tokens[docid]
+                        
+        return iindex
 
 
 '''

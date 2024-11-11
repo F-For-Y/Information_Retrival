@@ -243,9 +243,13 @@ class L2RRanker:
                 The list has the following structure: [(doc_id_1, score_1), (doc_id_2, score_2), ...]
         """
         # TODO: Retrieve potentially-relevant documents
+        if not query: # for empty query
+            return []
         query_parts = self.document_preprocessor.tokenize(query)
         if self.stopwords:
             query_parts = [token for token in query_parts if token not in self.stopwords]
+        if not query_parts:
+            return []
         query_word_counts = dict(Counter(query_parts))
 
         # TODO: Fetch a list of possible documents from the index and create a mapping from
@@ -256,6 +260,8 @@ class L2RRanker:
         # pass these doc-term-counts to functions later, so we need the accumulated representations
         doc_word_counts = self.accumulate_doc_term_counts(self.document_index, query_parts)
         title_word_counts = self.accumulate_doc_term_counts(self.title_index, query_parts)
+        if not doc_word_counts:
+            return []
 
         # TODO: Accumulate the documents word frequencies for the title and the main body
         candidate_docs = list(doc_word_counts.keys())
@@ -271,7 +277,7 @@ class L2RRanker:
 
         # TODO: Filter to just the top 100 documents for the L2R part for re-ranking
         # candidate_docs_scores.sort(key=lambda x: x[1], reverse=True)
-        top_100_docs_scores = candidate_docs_scores[:100]
+        top_100_docs_scores = candidate_docs_scores[:100] # for non-exist terms
 
         # TODO: Construct the feature vectors for each query-document pair in the top 100
         X = []
@@ -513,6 +519,8 @@ class L2RFeatureExtractor:
         Returns:
             The HITS hub score
         """
+        if docid not in self.docid_to_network_features:
+            return 0
         return self.docid_to_network_features[docid].get("hub_score", 0)
 
     # TODO HITS Authority score
@@ -526,6 +534,8 @@ class L2RFeatureExtractor:
         Returns:
             The HITS authority score
         """
+        if docid not in self.docid_to_network_features:
+            return 0
         return self.docid_to_network_features[docid].get("authority_score", 0)
     
     # TODO (HW3): Cross-Encoder Score
